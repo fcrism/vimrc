@@ -1,4 +1,4 @@
-function! CustomizedTabLine()
+ function! CustomizedTabLine()
     let s = ''
     let t = tabpagenr()
     let i = 1
@@ -26,5 +26,5 @@ function! CustomizedTabLine()
 endfunction
 
 " Always show the tablilne 
-set stal=2
-set tabline=%!CustomizedTabLine()
+"set stal=2
+"set tabline=%!CustomizedTabLine()

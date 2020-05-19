@@ -7,37 +7,33 @@
 " ============================================================================
 
 
+" This constant is used throughout this script for sorting purposes.
+let s:NERDTreeSortStarIndex = index(g:NERDTreeSortOrder, '*')
+lockvar s:NERDTreeSortStarIndex
+
 let s:Path = {}
 let g:NERDTreePath = s:Path
 
-" FUNCTION: Path.AbsolutePathFor(pathStr) {{{1
-function! s:Path.AbsolutePathFor(pathStr)
-    let l:prependWorkingDir = 0
-
+" FUNCTION: Path.AbsolutePathFor(str) {{{1
+function! s:Path.AbsolutePathFor(str)
+    let prependCWD = 0
     if nerdtree#runningWindows()
-        let l:prependWorkingDir = a:pathStr !~# '^.:\(\\\|\/\)\?' && a:pathStr !~# '^\(\\\\\|\/\/\)'
+        let prependCWD = a:str !~# '^.:\(\\\|\/\)' && a:str !~# '^\(\\\\\|\/\/\)'
     else
-        let l:prependWorkingDir = a:pathStr !~# '^/'
+        let prependCWD = a:str !~# '^/'
     endif
 
-    let l:result = a:pathStr
-
-    if l:prependWorkingDir
-        let l:result = getcwd()
-
-        if l:result[-1:] ==# s:Path.Slash()
-            let l:result = l:result . a:pathStr
-        else
-            let l:result = l:result . s:Path.Slash() . a:pathStr
-        endif
+    let toReturn = a:str
+    if prependCWD
+        let toReturn = getcwd() . s:Path.Slash() . a:str
     endif
 
-    return l:result
+    return toReturn
 endfunction
 
 " FUNCTION: Path.bookmarkNames() {{{1
 function! s:Path.bookmarkNames()
-    if !exists('self._bookmarkNames')
+    if !exists("self._bookmarkNames")
         call self.cacheDisplayString()
     endif
     return self._bookmarkNames
@@ -45,10 +41,10 @@ endfunction
 
 " FUNCTION: Path.cacheDisplayString() {{{1
 function! s:Path.cacheDisplayString() abort
-    let self.cachedDisplayString = g:NERDTreeNodeDelimiter . self.getLastPathComponent(1)
+    let self.cachedDisplayString = self.getLastPathComponent(1)
 
     if self.isExecutable
-        let self.cachedDisplayString = self.addDelimiter(self.cachedDisplayString) . '*'
+        let self.cachedDisplayString = self.cachedDisplayString . '*'
     endif
 
     let self._bookmarkNames = []
@@ -57,25 +53,16 @@ function! s:Path.cacheDisplayString() abort
             call add(self._bookmarkNames, i.name)
         endif
     endfor
-    if !empty(self._bookmarkNames) && g:NERDTreeMarkBookmarks ==# 1
-        let self.cachedDisplayString = self.addDelimiter(self.cachedDisplayString) . ' {' . join(self._bookmarkNames) . '}'
+    if !empty(self._bookmarkNames) && g:NERDTreeMarkBookmarks == 1
+        let self.cachedDisplayString .= ' {' . join(self._bookmarkNames) . '}'
     endif
 
     if self.isSymLink
-        let self.cachedDisplayString = self.addDelimiter(self.cachedDisplayString) . ' -> ' . self.symLinkDest
+        let self.cachedDisplayString .=  ' -> ' . self.symLinkDest
     endif
 
     if self.isReadOnly
-        let self.cachedDisplayString = self.addDelimiter(self.cachedDisplayString) . ' ['.g:NERDTreeGlyphReadOnly.']'
-    endif
-endfunction
-
-" FUNCTION: Path.addDelimiter() {{{1
-function! s:Path.addDelimiter(line)
-    if a:line =~# '\(.*' . g:NERDTreeNodeDelimiter . '\)\{2}'
-        return a:line
-    else
-        return a:line . g:NERDTreeNodeDelimiter
+        let self.cachedDisplayString .=  ' ['.g:NERDTreeGlyphReadOnly.']'
     endif
 endfunction
 
@@ -87,22 +74,17 @@ function! s:Path.changeToDir()
     endif
 
     try
-        if g:NERDTreeUseTCD && exists(':tcd') ==# 2
-            execute 'tcd ' . dir
-            call nerdtree#echo("Tab's CWD is now: " . getcwd())
-        else
-            execute 'cd ' . dir
-            call nerdtree#echo('CWD is now: ' . getcwd())
-        endif
+        execute "cd " . dir
+        call nerdtree#echo("CWD is now: " . getcwd())
     catch
-        throw 'NERDTree.PathChangeError: cannot change CWD to ' . dir
+        throw "NERDTree.PathChangeError: cannot change CWD to " . dir
     endtry
 endfunction
 
 " FUNCTION: Path.compareTo() {{{1
 "
 " Compares this Path to the given path and returns 0 if they are equal, -1 if
-" this Path is 'less than' the given path, or 1 if it is 'greater'.
+" this Path is "less than" the given path, or 1 if it is "greater".
 "
 " Args:
 " path: the path object to compare this to
@@ -188,7 +170,7 @@ endfunction
 " dest: the location to copy this dir/file to
 function! s:Path.copy(dest)
     if !s:Path.CopyingSupported()
-        throw 'NERDTree.CopyingNotSupportedError: Copying is not supported on this OS'
+        throw "NERDTree.CopyingNotSupportedError: Copying is not supported on this OS"
     endif
 
     call s:Path.createParentDirectories(a:dest)
@@ -199,10 +181,10 @@ function! s:Path.copy(dest)
         let cmd_prefix = (self.isDirectory ? g:NERDTreeCopyDirCmd : g:NERDTreeCopyFileCmd)
     endif
 
-    let cmd = cmd_prefix . ' ' . shellescape(self.str()) . ' ' . shellescape(a:dest)
+    let cmd = cmd_prefix . " " . escape(self.str(), self._escChars()) . " " . escape(a:dest, self._escChars())
     let success = system(cmd)
-    if v:shell_error !=# 0
-        throw "NERDTree.CopyError: Could not copy '". self.str() ."' to: '" . a:dest . "'"
+    if v:shell_error != 0
+        throw "NERDTree.CopyError: Could not copy ''". self.str() ."'' to: '" . a:dest . "'"
     endif
 endfunction
 
@@ -258,18 +240,12 @@ function! s:Path.delete()
         let cmd = g:NERDTreeRemoveDirCmd . self.str({'escape': 1})
         let success = system(cmd)
 
-        if v:shell_error !=# 0
+        if v:shell_error != 0
             throw "NERDTree.PathDeletionError: Could not delete directory: '" . self.str() . "'"
         endif
     else
-        if exists('g:NERDTreeRemoveFileCmd')
-            let cmd = g:NERDTreeRemoveFileCmd . self.str({'escape': 1})
-            let success = system(cmd)
-        else
-            let success = delete(self.str())
-        endif
-
-        if success !=# 0
+        let success = delete(self.str())
+        if success != 0
             throw "NERDTree.PathDeletionError: Could not delete file: '" . self.str() . "'"
         endif
     endif
@@ -286,7 +262,7 @@ endfunction
 " Returns a string that specifies how the path should be represented as a
 " string
 function! s:Path.displayString()
-    if self.cachedDisplayString ==# ''
+    if self.cachedDisplayString ==# ""
         call self.cacheDisplayString()
     endif
 
@@ -295,10 +271,7 @@ endfunction
 
 " FUNCTION: Path.edit() {{{1
 function! s:Path.edit()
-    let l:bufname = self.str({'format': 'Edit'})
-    if bufname('%') !=# l:bufname
-        exec 'edit ' . l:bufname
-    endif
+    exec "edit " . self.str({'format': 'Edit'})
 endfunction
 
 " FUNCTION: Path.extractDriveLetter(fullpath) {{{1
@@ -306,10 +279,10 @@ endfunction
 " If running windows, cache the drive letter for this path
 function! s:Path.extractDriveLetter(fullpath)
     if nerdtree#runningWindows()
-        if a:fullpath =~# '^\(\\\\\|\/\/\)'
+        if a:fullpath =~ '^\(\\\\\|\/\/\)'
             "For network shares, the 'drive' consists of the first two parts of the path, i.e. \\boxname\share
             let self.drive = substitute(a:fullpath, '^\(\(\\\\\|\/\/\)[^\\\/]*\(\\\|\/\)[^\\\/]*\).*', '\1', '')
-            let self.drive = substitute(self.drive, '/', '\', 'g')
+            let self.drive = substitute(self.drive, '/', '\', "g")
         else
             let self.drive = substitute(a:fullpath, '\(^[a-zA-Z]:\).*', '\1', '')
         endif
@@ -388,14 +361,12 @@ endfunction
 function! s:Path.getSortOrderIndex()
     let i = 0
     while i < len(g:NERDTreeSortOrder)
-        if g:NERDTreeSortOrder[i] !~? '\[\[-\?\(timestamp\|size\|extension\)\]\]' &&
-        \ self.getLastPathComponent(1) =~# g:NERDTreeSortOrder[i]
+        if  self.getLastPathComponent(1) =~# g:NERDTreeSortOrder[i]
             return i
         endif
         let i = i + 1
     endwhile
-
-    return index(g:NERDTreeSortOrder, '*')
+    return s:NERDTreeSortStarIndex
 endfunction
 
 " FUNCTION: Path._splitChunks(path) {{{1
@@ -405,7 +376,7 @@ function! s:Path._splitChunks(path)
     let i = 0
     while i < len(chunks)
         "convert number literals to numbers
-        if match(chunks[i], '^\d\+$') ==# 0
+        if match(chunks[i], '^\d\+$') == 0
             let chunks[i] = str2nr(chunks[i])
         endif
         let i = i + 1
@@ -416,28 +387,7 @@ endfunction
 " FUNCTION: Path.getSortKey() {{{1
 " returns a key used in compare function for sorting
 function! s:Path.getSortKey()
-    if !exists('self._sortKey') || g:NERDTreeSortOrder !=# g:NERDTreeOldSortOrder
-        " Look for file metadata tags: [[timestamp]], [[extension]], [[size]]
-        let metadata = []
-        for tag in g:NERDTreeSortOrder
-            if tag =~? '\[\[-\?timestamp\]\]'
-                let metadata += [self.isDirectory ? 0 : getftime(self.str()) * (tag =~# '-' ? -1 : 1)]
-            elseif tag =~? '\[\[-\?size\]\]'
-                let metadata += [self.isDirectory ? 0 : getfsize(self.str()) * (tag =~# '-' ? -1 : 1)]
-            elseif tag =~? '\[\[extension\]\]'
-                let extension = matchstr(self.getLastPathComponent(0), '[^.]\+\.\zs[^.]\+$')
-                let metadata += [self.isDirectory ? '' : (extension ==# '' ? nr2char(str2nr('0x10ffff',16)) : extension)]
-            endif
-        endfor
-
-        if g:NERDTreeSortOrder[0] =~# '\[\[.*\]\]'
-            " Apply tags' sorting first if specified first.
-            let self._sortKey = metadata + [self.getSortOrderIndex()]
-        else
-            " Otherwise, do regex grouping first.
-            let self._sortKey = [self.getSortOrderIndex()] + metadata
-        endif
-
+    if !exists("self._sortKey")
         let path = self.getLastPathComponent(1)
         if !g:NERDTreeSortHiddenFirst
             let path = substitute(path, '^[._]', '', '')
@@ -445,31 +395,16 @@ function! s:Path.getSortKey()
         if !g:NERDTreeCaseSensitiveSort
             let path = tolower(path)
         endif
-
-        call extend(self._sortKey, (g:NERDTreeNaturalSort ? self._splitChunks(path) : [path]))
+        if !g:NERDTreeNaturalSort
+            let self._sortKey = [self.getSortOrderIndex(), path]
+        else
+            let self._sortKey = [self.getSortOrderIndex()] + self._splitChunks(path)
+        endif
     endif
+
     return self._sortKey
 endfunction
 
-" FUNCTION: Path.isHiddenUnder(path) {{{1
-function! s:Path.isHiddenUnder(path)
-
-    if !self.isUnder(a:path)
-        return 0
-    endif
-
-    let l:startIndex = len(a:path.pathSegments)
-    let l:segments = self.pathSegments[l:startIndex : ]
-
-    for l:segment in l:segments
-
-        if l:segment =~# '^\.'
-            return 1
-        endif
-    endfor
-
-    return 0
-endfunction
 
 " FUNCTION: Path.isUnixHiddenFile() {{{1
 " check for unix hidden files
@@ -503,9 +438,8 @@ function! s:Path.ignore(nerdtree)
             endif
         endfor
 
-        for Callback in g:NERDTree.PathFilters()
-            let Callback = type(Callback) ==# type(function('tr')) ? Callback : function(Callback)
-            if Callback({'path': self, 'nerdtree': a:nerdtree})
+        for callback in g:NERDTree.PathFilters()
+            if {callback}({'path': self, 'nerdtree': a:nerdtree})
                 return 1
             endif
         endfor
@@ -527,12 +461,12 @@ endfunction
 " returns true if this path matches the given ignore pattern
 function! s:Path._ignorePatternMatches(pattern)
     let pat = a:pattern
-    if strpart(pat,len(pat)-7) ==# '[[dir]]'
+    if strpart(pat,len(pat)-7) == '[[dir]]'
         if !self.isDirectory
             return 0
         endif
         let pat = strpart(pat,0, len(pat)-7)
-    elseif strpart(pat,len(pat)-8) ==# '[[file]]'
+    elseif strpart(pat,len(pat)-8) == '[[file]]'
         if self.isDirectory
             return 0
         endif
@@ -553,19 +487,19 @@ function! s:Path.isAncestor(path)
 
     let this = self.str()
     let that = a:path.str()
-    return stridx(that, this) ==# 0
+    return stridx(that, this) == 0
 endfunction
 
 " FUNCTION: Path.isUnder(path) {{{1
 " return 1 if this path is somewhere under the given path in the filesystem.
 function! s:Path.isUnder(path)
-    if a:path.isDirectory ==# 0
+    if a:path.isDirectory == 0
         return 0
     endif
 
     let this = self.str()
     let that = a:path.str()
-    return stridx(this, that . s:Path.Slash()) ==# 0
+    return stridx(this, that . s:Path.Slash()) == 0
 endfunction
 
 " FUNCTION: Path.JoinPathStrings(...) {{{1
@@ -585,23 +519,20 @@ endfunction
 " Args:
 " path: the other path obj to compare this with
 function! s:Path.equals(path)
-    if nerdtree#runningWindows()
-        return self.str() ==? a:path.str()
-    else
-        return self.str() ==# a:path.str()
-    endif
+    return self.str() ==# a:path.str()
 endfunction
 
-" FUNCTION: Path.New(pathStr) {{{1
-function! s:Path.New(pathStr)
-    let l:newPath = copy(self)
+" FUNCTION: Path.New() {{{1
+" The Constructor for the Path object
+function! s:Path.New(path)
+    let newPath = copy(self)
 
-    call l:newPath.readInfoFromDisk(s:Path.AbsolutePathFor(a:pathStr))
+    call newPath.readInfoFromDisk(s:Path.AbsolutePathFor(a:path))
 
-    let l:newPath.cachedDisplayString = ''
-    let l:newPath.flagSet = g:NERDTreeFlagSet.New()
+    let newPath.cachedDisplayString = ""
+    let newPath.flagSet = g:NERDTreeFlagSet.New()
 
-    return l:newPath
+    return newPath
 endfunction
 
 " FUNCTION: Path.Slash() {{{1
@@ -640,8 +571,8 @@ function! s:Path.readInfoFromDisk(fullpath)
 
     let fullpath = s:Path.WinToUnixPath(a:fullpath)
 
-    if getftype(fullpath) ==# 'fifo'
-        throw 'NERDTree.InvalidFiletypeError: Cant handle FIFO files: ' . a:fullpath
+    if getftype(fullpath) ==# "fifo"
+        throw "NERDTree.InvalidFiletypeError: Cant handle FIFO files: " . a:fullpath
     endif
 
     let self.pathSegments = filter(split(fullpath, '/'), '!empty(v:val)')
@@ -653,7 +584,7 @@ function! s:Path.readInfoFromDisk(fullpath)
         let self.isDirectory = 0
         let self.isReadOnly = filewritable(a:fullpath) ==# 0
     else
-        throw 'NERDTree.InvalidArgumentsError: Invalid path = ' . a:fullpath
+        throw "NERDTree.InvalidArgumentsError: Invalid path = " . a:fullpath
     endif
 
     let self.isExecutable = 0
@@ -668,7 +599,7 @@ function! s:Path.readInfoFromDisk(fullpath)
     let hardPath = s:Path.Resolve(self.strTrunk()) . '/' . lastPathComponent
 
     "if  the last part of the path is a symlink then flag it as such
-    let self.isSymLink = (s:Path.Resolve(hardPath) !=# hardPath)
+    let self.isSymLink = (s:Path.Resolve(hardPath) != hardPath)
     if self.isSymLink
         let self.symLinkDest = s:Path.Resolve(fullpath)
 
@@ -703,13 +634,11 @@ endfunction
 " Renames this node on the filesystem
 function! s:Path.rename(newPath)
     if a:newPath ==# ''
-        throw 'NERDTree.InvalidArgumentsError: Invalid newPath for renaming = '. a:newPath
+        throw "NERDTree.InvalidArgumentsError: Invalid newPath for renaming = ". a:newPath
     endif
 
-    call s:Path.createParentDirectories(a:newPath)
-
     let success =  rename(self.str(), a:newPath)
-    if success !=# 0
+    if success != 0
         throw "NERDTree.PathRenameError: Could not rename: '" . self.str() . "'" . 'to:' . a:newPath
     endif
     call self.readInfoFromDisk(a:newPath)
@@ -745,7 +674,7 @@ endfunction
 " value associated with 'truncateTo'. A '<' is prepended.
 function! s:Path.str(...)
     let options = a:0 ? a:1 : {}
-    let toReturn = ''
+    let toReturn = ""
 
     if has_key(options, 'format')
         let format = options['format']
@@ -764,10 +693,8 @@ function! s:Path.str(...)
 
     if has_key(options, 'truncateTo')
         let limit = options['truncateTo']
-        if strdisplaywidth(toReturn) > limit-1
-            while strdisplaywidth(toReturn) > limit-1 && strchars(toReturn) > 0
-                let toReturn = substitute(toReturn, '^.', '', '')
-            endwhile
+        if len(toReturn) > limit-1
+            let toReturn = toReturn[(len(toReturn)-limit+1):]
             if len(split(toReturn, '/')) > 1
                 let toReturn = '</' . join(split(toReturn, '/')[1:], '/') . '/'
             else
@@ -782,7 +709,7 @@ endfunction
 " FUNCTION: Path._strForUI() {{{1
 function! s:Path._strForUI()
     let toReturn = '/' . join(self.pathSegments, '/')
-    if self.isDirectory && toReturn !=# '/'
+    if self.isDirectory && toReturn != '/'
         let toReturn  = toReturn . '/'
     endif
     return toReturn
@@ -805,7 +732,7 @@ function! s:Path._strForEdit()
 
     " On Windows, the drive letter may be removed by "fnamemodify()".  Add it
     " back, if necessary.
-    if nerdtree#runningWindows() && l:result[0] ==# s:Path.Slash()
+    if nerdtree#runningWindows() && l:result[0] == s:Path.Slash()
         let l:result = self.drive . l:result
     endif
 
@@ -863,7 +790,7 @@ function! s:Path.tabnr()
     let str = self.str()
     for t in range(tabpagenr('$'))
         for b in tabpagebuflist(t+1)
-            if str ==# expand('#' . b . ':p')
+            if str == expand('#' . b . ':p')
                 return t+1
             endif
         endfor
@@ -886,13 +813,13 @@ function! s:Path.WinToUnixPath(pathstr)
     let toReturn = a:pathstr
 
     "remove the x:\ of the front
-    let toReturn = substitute(toReturn, '^.*:\(\\\|/\)\?', '/', '')
+    let toReturn = substitute(toReturn, '^.*:\(\\\|/\)\?', '/', "")
 
     "remove the \\ network share from the front
-    let toReturn = substitute(toReturn, '^\(\\\\\|\/\/\)[^\\\/]*\(\\\|\/\)[^\\\/]*\(\\\|\/\)\?', '/', '')
+    let toReturn = substitute(toReturn, '^\(\\\\\|\/\/\)[^\\\/]*\(\\\|\/\)[^\\\/]*\(\\\|\/\)\?', '/', "")
 
     "convert all \ chars to /
-    let toReturn = substitute(toReturn, '\', '/', 'g')
+    let toReturn = substitute(toReturn, '\', '/', "g")
 
     return toReturn
 endfunction
